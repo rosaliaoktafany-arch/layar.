@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Layar — Review & Jelajah Film</title>
+
+  <!-- Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: '#090909',
+            panel: '#181818',
+            line: '#303030',
+            ivory: '#F5F5F1',
+            mute: '#A3A3A3',
+            gold: '#E50914',
+            wine: '#7F1D1D'
+          },
+          fontFamily: {
+            display: ['"Bricolage Grotesque"', 'system-ui', 'sans-serif'],
+            body: ['"DM Sans"', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Alpine.js (CDN) + logika aplikasi (file terpisah) -->
+  <script src="js/apps.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+    html { scroll-behavior: smooth; }
+    body { background: #090909; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { scrollbar-width: none; }
+    .hero-fade {
+      background:
+        linear-gradient(90deg, #090909 8%, rgba(9,9,9,.78) 45%, rgba(9,9,9,.15) 100%),
+        linear-gradient(0deg, #090909 2%, rgba(9,9,9,0) 40%);
+    }
+    .spot {
+      background: radial-gradient(60% 80% at 80% 0%, rgba(229,9,20,.38), rgba(9,9,9,0) 70%);
+    }
+    .clamp-3 { display: -webkit-box; --webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    }
+    :focus-visible { outline: 2px solid #D9B873; outline-offset: 2px; }
+  </style>
+</head>
+
+<body x-data="movieApp()"
+      x-effect="document.body.style.overflow = modalOpen ? 'hidden' : ''"
+      @keydown.escape.window="closeDetail()"
+      class="font-body text-ivory antialiased min-h-screen">
+
+  <!-- ============ NAVBAR + SEARCH ============ -->
+  <header class="sticky top-0 z-30 border-b border-line/70 bg-ink/80 backdrop-blur-xl">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 py-3 flex flex-wrap items-center gap-x-6 gap-y-3">
+      <a href="#" @click.prevent="resetAll()" class="font-display text-3xl font-extrabold tracking-tight leading-none">
+        layar<span class="text-gold">.</span>
+      </a>
+
+      <div class="relative order-3 sm:order-2 w-full sm:w-auto sm:flex-1 sm:max-w-xl sm:ml-auto">
+        <svg class="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" x-model="query" @input="debounceSearch()" @keydown.enter="searchMovies()"
+               placeholder="Cari judul film…" aria-label="Cari film"
+               class="w-full rounded-full border border-line bg-panel py-2.5 pl-11 pr-10 text-sm placeholder:text-mute focus:border-gold focus:outline-none" />
+        <button x-show="query" x-cloak @click="query=''; searchMovies()" aria-label="Hapus pencarian"
+                class="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-mute hover:text-ivory">✕</button>
+      </div>
+      <form @submit.prevent="saveApiKey()" class="order-4 flex w-full gap-2 sm:order-3 sm:w-auto">
+        <input type="password" x-model="apiKeyInput" aria-label="API key TMDB"
+               placeholder="API key TMDB"
+               class="min-w-0 flex-1 rounded-full border border-line bg-panel px-4 py-2.5 text-sm placeholder:text-mute focus:border-gold focus:outline-none sm:w-40 sm:flex-none" />
+        <button type="submit" class="rounded-full bg-gold px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700">
+          Pakai key
+        </button>
+      </form>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ HERO (film unggulan) ============ -->
+    <template x-if="featured && !query">
+      <section class="relative isolate overflow-hidden border-b border-line/60">
+        <img :src="img(featured.backdrop_path, 'w1280')" alt="" class="absolute inset-0 -z-20 h-full w-full object-cover object-top" />
+        <div class="absolute inset-0 -z-10 hero-fade"></div>
+        <div class="absolute inset-0 -z-10 spot"></div>
+
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 pt-20 pb-14 sm:pt-32 sm:pb-24 min-h-[420px] sm:min-h-[560px] flex flex-col justify-end">
+          <p class="mb-4 inline-flex w-fit items-center gap-2 rounded-full border border-gold/40 bg-ink/50 px-3 py-1 text-xs text-gold backdrop-blur">
+            <span class="h-1.5 w-1.5 rounded-full bg-gold"></span>
+            <span x-text="year ? 'Terpopuler tahun ' + year : 'Sedang ramai dibicarakan'"></span>
+          </p>
+          <h1 class="font-display font-extrabold leading-[0.92] tracking-tighter text-5xl sm:text-7xl lg:text-8xl max-w-4xl text-balance"
+              x-text="featured.title"></h1>
+          <div class="mt-5 flex items-center gap-4 text-sm">
+            <span class="flex items-center gap-1.5 font-bold text-gold">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 3 6.9 7.5.7-5.7 5 1.7 7.4L12 18l-6.5 4 1.7-7.4-5.7-5 7.5-.7z"/></svg>
+              <span x-text="rating(featured.vote_average)"></span>
+            </span>
+            <span class="text-mute" x-text="yearOf(featured.release_date)"></span>
+          </div>
+          <p class="mt-4 max-w-xl text-ivory/80 clamp-3" x-text="featured.overview || 'Sinopsis belum tersedia.'"></p>
+          <div class="mt-7">
+            <button @click="openDetail(featured.id)"
+                    class="rounded-full bg-gold px-7 py-3 text-sm font-bold text-ink transition hover:bg-ivory">
+              Lihat detail film
+            </button>
+          </div>
+        </div>
+      </section>
+    </template>
+
+    <!-- ============ FILTER TAHUN RILIS ============ -->
+    <section class="mx-auto max-w-7xl px-4 sm:px-6 pt-10" id="jelajah">
+      <h2 class="font-display text-2xl sm:text-3xl font-extrabold tracking-tight">Jelajah menurut tahun rilis</h2>
+      <p class="mt-1 text-sm text-mute">Pilih tahun untuk melihat film terpopuler di tahun itu. Bisa digabung dengan pencarian.</p>
+
+      <div class="relative mt-5">
+        <div class="no-scrollbar flex gap-2 overflow-x-auto pb-2" role="tablist" aria-label="Tahun rilis">
+          <button role="tab" :aria-selected="year === ''" @click="setYear('')"
+                  :class="year === '' ? 'bg-gold text-ink border-gold' : 'border-line text-ivory/80 hover:border-gold/60'"
+                  class="shrink-0 rounded-full border px-5 py-2 text-sm font-medium transition">Semua tahun</button>
+          <template x-for="y in years" :key="y">
+            <button role="tab" :aria-selected="year === y" @click="setYear(y)"
+                    :class="year === y ? 'bg-gold text-ink border-gold' : 'border-line text-ivory/80 hover:border-gold/60'"
+                    class="shrink-0 rounded-full border px-5 py-2 text-sm font-medium tabular-nums transition" x-text="y"></button>
+          </template>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ GRID FILM ============ -->
+    <section class="mx-auto max-w-7xl px-4 sm:px-6 py-10">
+      <div class="mb-6 flex items-end justify-between gap-4">
+        <h2 class="font-display text-xl sm:text-2xl font-extrabold tracking-tight" x-text="heading"></h2>
+        <span class="text-sm text-mute" x-show="!loading && movies.length" x-text="movies.length + ' film ditampilkan'"></span>
+      </div>
+
+      <!-- Loading skeleton -->
+      <div x-show="loading" x-cloak class="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4 xl:grid-cols-5">
+        <template x-for="n in 10" :key="n">
+          <div class="animate-pulse">
+            <div class="aspect-[2/3] rounded-xl bg-panel"></div>
+            <div class="mt-3 h-4 w-3/4 rounded bg-panel"></div>
+            <div class="mt-2 h-3 w-1/3 rounded bg-panel"></div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Error -->
+      <div x-show="!loading && error" x-cloak class="rounded-2xl border border-wine/60 bg-wine/10 p-8 text-center">
+        <p class="font-display text-xl font-bold">Data belum bisa dimuat</p>
+        <p class="mx-auto mt-2 max-w-lg text-sm text-ivory/80" x-text="error"></p>
+        <button @click="loadMovies(true)" class="mt-5 rounded-full border border-gold px-6 py-2 text-sm font-medium text-gold hover:bg-gold hover:text-ink transition">Coba lagi</button>
+      </div>
+
+      <!-- Kosong -->
+      <div x-show="!loading && !error && movies.length === 0" x-cloak class="rounded-2xl border border-dashed border-line py-20 text-center">
+        <div class="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-panel text-2xl">🎞️</div>
+        <p class="font-display text-xl font-bold">Film tidak ditemukan</p>
+        <p class="mx-auto mt-2 max-w-sm text-sm text-mute">
+          Tidak ada hasil<span x-show="query"> untuk “<span x-text="query"></span>”</span><span x-show="year"> di tahun <span x-text="year"></span></span>.
+          Coba kata kunci lain atau ganti tahun.
+        </p>
+        <button @click="resetAll()" class="mt-5 rounded-full bg-gold px-6 py-2 text-sm font-bold text-ink hover:bg-ivory transition">Kembali ke film populer</button>
+      </div>
+
+      <!-- Kartu film -->
+      <div x-show="!loading && !error && movies.length" x-cloak
+           class="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4 xl:grid-cols-5">
+        <template x-for="m in movies" :key="m.id">
+          <article>
+            <button @click="openDetail(m.id)" class="group block w-full text-left">
+              <div class="relative aspect-[2/3] overflow-hidden rounded-xl border border-line bg-panel transition group-hover:border-gold/70">
+                <template x-if="m.poster_path">
+                  <img :src="img(m.poster_path, 'w500')" :alt="'Poster ' + m.title" loading="lazy"
+                       class="h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]" />
+                </template>
+                <template x-if="!m.poster_path">
+                  <div class="grid h-full w-full place-items-center p-4 text-center text-sm text-mute" x-text="m.title"></div>
+                </template>
+                <span class="absolute left-2.5 top-2.5 flex items-center gap-1 rounded-full bg-ink/85 px-2.5 py-1 text-xs font-bold text-gold backdrop-blur">
+                  <svg class="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 3 6.9 7.5.7-5.7 5 1.7 7.4L12 18l-6.5 4 1.7-7.4-5.7-5 7.5-.7z"/></svg>
+                  <span x-text="rating(m.vote_average)"></span>
+                </span>
+              </div>
+              <h3 class="mt-3 line-clamp-2 font-display text-base font-semibold leading-snug" x-text="m.title"></h3>
+              <p class="mt-0.5 text-sm text-mute tabular-nums" x-text="yearOf(m.release_date)"></p>
+            </button>
+          </article>
+        </template>
+      </div>
+
+      <!-- Muat lebih banyak -->
+      <div class="mt-10 text-center" x-show="!loading && !error && page < totalPages" x-cloak>
+        <button @click="loadMore()" :disabled="loadingMore"
+                class="rounded-full border border-line px-8 py-3 text-sm font-medium transition hover:border-gold hover:text-gold disabled:opacity-50">
+          <span x-text="loadingMore ? 'Memuat…' : 'Muat lebih banyak'"></span>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-line/60 py-8 text-center text-xs text-mute">
+    <p>Data film dari <span class="text-ivory/80">TMDB</span>. Aplikasi ini bukan produk resmi atau didukung oleh TMDB.</p>
+  </footer>
+
+  <!-- ============ MODAL DETAIL ============ -->
+  <div x-show="modalOpen" x-cloak class="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6"
+       role="dialog" aria-modal="true" aria-label="Detail film">
+    <div x-show="modalOpen" x-transition.opacity @click="closeDetail()" class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+
+    <div x-show="modalOpen"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-y-8 sm:scale-95"
+         x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0 translate-y-4"
+         class="relative max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border border-line bg-panel sm:max-w-4xl sm:rounded-3xl">
+
+      <button @click="closeDetail()" aria-label="Tutup"
+              class="sticky top-3 z-10 float-right mr-3 mt-3 grid h-9 w-9 place-items-center rounded-full bg-ink/80 text-ivory backdrop-blur hover:bg-gold hover:text-ink transition">✕</button>
+
+      <!-- loading detail -->
+      <div x-show="detailLoading" class="grid place-items-center py-32">
+        <div class="h-10 w-10 animate-spin rounded-full border-2 border-line border-t-gold"></div>
+      </div>
+
+      <template x-if="detail && !detailLoading">
+        <div>
+          <!-- Backdrop strip -->
+          <div class="relative h-40 sm:h-56 overflow-hidden">
+            <img x-show="detail.backdrop_path" :src="img(detail.backdrop_path, 'w780')" alt="" class="h-full w-full object-cover" />
+            <div class="absolute inset-0 bg-gradient-to-t from-panel via-panel/60 to-wine/20"></div>
+          </div>
+
+          <div class="relative -mt-24 sm:-mt-32 grid gap-6 px-5 pb-8 sm:grid-cols-[240px_1fr] sm:gap-8 sm:px-8">
+            <!-- Poster -->
+            <div class="mx-auto w-44 sm:w-full">
+              <div class="aspect-[2/3] overflow-hidden rounded-xl border border-line bg-ink shadow-2xl shadow-black/60">
+                <img x-show="detail.poster_path" :src="img(detail.poster_path, 'w500')" :alt="'Poster ' + detail.title" class="h-full w-full object-cover" />
+              </div>
+            </div>
+
+            <!-- Info -->
+            <div class="sm:pt-28">
+              <h2 class="font-display text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl" x-text="detail.title"></h2>
+              <p x-show="detail.tagline" class="mt-1 text-sm italic text-mute" x-text="detail.tagline"></p>
+
+              <div class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+                <span class="flex items-center gap-1.5 rounded-full bg-gold px-3 py-1 font-bold text-ink">
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 3 6.9 7.5.7-5.7 5 1.7 7.4L12 18l-6.5 4 1.7-7.4-5.7-5 7.5-.7z"/></svg>
+                  <span x-text="rating(detail.vote_average)"></span>
+                  <span class="font-medium opacity-70" x-text="'(' + detail.vote_count.toLocaleString('id-ID') + ')'"></span>
+                </span>
+                <span class="tabular-nums" x-text="'Rilis ' + yearOf(detail.release_date)"></span>
+                <span x-show="detail.runtime" class="text-mute" x-text="runtime(detail.runtime)"></span>
+              </div>
+
+              <div class="mt-4 flex flex-wrap gap-2" x-show="detail.genres && detail.genres.length">
+                <template x-for="g in detail.genres" :key="g.id">
+                  <span class="rounded-full border border-line px-3 py-1 text-xs text-ivory/80" x-text="g.name"></span>
+                </template>
+              </div>
+
+              <h3 class="mt-6 font-display text-lg font-bold">Sinopsis</h3>
+              <p class="mt-2 max-w-prose leading-relaxed text-ivory/85" x-text="detail.overview || 'Sinopsis belum tersedia untuk film ini.'"></p>
+
+              <!-- Trailer -->
+              <div class="mt-6" x-show="trailerKey">
+                <button x-show="!showTrailer" @click="showTrailer = true"
+                        class="inline-flex items-center gap-2 rounded-full bg-gold px-6 py-3 text-sm font-bold text-ink transition hover:bg-ivory">
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                  Nonton Trailer
+                </button>
+                <div x-show="showTrailer" x-cloak class="overflow-hidden rounded-xl border border-line bg-black">
+                  <div class="aspect-video">
+                    <template x-if="showTrailer">
+                      <iframe class="h-full w-full" :src="'https://www.youtube-nocookie.com/embed/' + trailerKey + '?autoplay=1&rel=0'"
+                              title="Trailer film" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+                    </template>
+                  </div>
+                </div>
+              </div>
+              <p x-show="!trailerKey" class="mt-6 text-sm text-mute">Trailer belum tersedia di TMDB.</p>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- error detail -->
+      <div x-show="!detailLoading && !detail" x-cloak class="px-6 py-24 text-center">
+        <p class="font-display text-xl font-bold">Detail film gagal dimuat</p>
+        <p class="mt-2 text-sm text-mute" x-text="detailError || 'Periksa koneksi internet kamu, lalu coba lagi.'"></p>      </div>
+    </div>
+  </div>
+
+</body>
+</html>
